@@ -5,6 +5,7 @@ import type {
 	CfModuleType,
 	Config,
 	EphemeralDirectory,
+	FetchKVGetValueFetcher,
 	FetchResultFetcher,
 	FetchListResultFetcher,
 	Logger,
@@ -20,6 +21,7 @@ import type { NodeJSCompatMode } from "miniflare";
 export type DeployHelpersContext = {
 	fetchResult: FetchResultFetcher;
 	fetchListResult: FetchListResultFetcher;
+	fetchKVGetValue: FetchKVGetValueFetcher;
 	logger: Logger;
 	confirm: (
 		text: string,

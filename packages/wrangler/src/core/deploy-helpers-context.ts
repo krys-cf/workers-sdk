@@ -1,4 +1,4 @@
-import { fetchListResult, fetchResult } from "../cfetch";
+import { fetchKVGetValue, fetchListResult, fetchResult } from "../cfetch";
 import { confirm, prompt } from "../dialogs";
 import { isNonInteractiveOrCI } from "../is-interactive";
 import { logger } from "../logger";
@@ -29,6 +29,7 @@ export function createDeployHelpersContext(options?: {
 				options?.apiToken
 			),
 		fetchListResult,
+		fetchKVGetValue,
 		logger,
 		confirm,
 		prompt,

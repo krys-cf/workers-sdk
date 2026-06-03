@@ -8,7 +8,7 @@ import {
 } from "@cloudflare/workers-utils";
 import chalk from "chalk";
 import { maybeInstallCloudflareSkillsGlobally } from "../agents-skills-install";
-import { fetchResult, fetchListResult } from "../cfetch";
+import { fetchKVGetValue, fetchResult, fetchListResult } from "../cfetch";
 import { createCloudflareClient } from "../cfetch/internal";
 import { readConfig } from "../config";
 import { confirm, prompt } from "../dialogs";
@@ -268,6 +268,7 @@ function createHandler(def: InternalCommandDefinition, argv: string[]) {
 						logger,
 						fetchResult,
 						fetchListResult,
+						fetchKVGetValue,
 						prompt,
 						confirm,
 						isNonInteractiveOrCI,
