@@ -1,5 +1,29 @@
 # wrangler
 
+## 4.99.0
+
+### Minor Changes
+
+- [#14174](https://github.com/cloudflare/workers-sdk/pull/14174) [`8cf8c61`](https://github.com/cloudflare/workers-sdk/commit/8cf8c61efb9fd99892bcb250db12d7052b5fef08) Thanks [@oliy](https://github.com/oliy)! - Surface pipeline status and failure reasons in `wrangler pipelines list` and `wrangler pipelines get`
+
+  `wrangler pipelines list` now includes a `Status` column, and when any pipelines are in a `failed` state it prints a summary of each failing pipeline along with the reason reported by the API.
+
+  `wrangler pipelines get` now shows the pipeline `Status` in the general details and, for failed pipelines, highlights the failure with the reason returned by the server so it is clear why a pipeline is not running.
+
+### Patch Changes
+
+- [#14163](https://github.com/cloudflare/workers-sdk/pull/14163) [`23aecac`](https://github.com/cloudflare/workers-sdk/commit/23aecac6a2d57ee5d4888405bd12cac66ab8a725) Thanks [@emily-shen](https://github.com/emily-shen)! - Print deploy warnings even in non-interactive contexts when strict mode is off
+
+  Currently, wrangler deploy checks whether the incoming deploy configuration has destructive conflicts with the current configuration. Previously, we only performed this check in interactive contexts, or if the `--strict` flag was passed in. Now this warning is always printed, and it remains non-blocking in non-interactive contexts.
+
+- [#14173](https://github.com/cloudflare/workers-sdk/pull/14173) [`b932e47`](https://github.com/cloudflare/workers-sdk/commit/b932e47d49e736cb59159341a92045dcc65df0c6) Thanks [@gpanders](https://github.com/gpanders)! - Handle API validation errors from `wrangler containers ssh`
+
+  Wrangler now lets the Containers API validate SSH instance IDs and preserves raw API error bodies such as `INVALID_INSTANCE_ID` when reporting validation failures.
+
+- [#14053](https://github.com/cloudflare/workers-sdk/pull/14053) [`7993711`](https://github.com/cloudflare/workers-sdk/commit/79937112ff580c34b182b73ef830cdb17b5b798d) Thanks [@fallintoplace](https://github.com/fallintoplace)! - Prevent delete-only `wrangler secret bulk` input from creating a new Worker
+
+  Previously, `wrangler secret bulk` could create a draft Worker when the input only deleted secrets and the target Worker name did not exist. Delete-only bulk secret operations now leave Worker-not-found as an error instead of creating a new Worker.
+
 ## 4.98.0
 
 ### Minor Changes
