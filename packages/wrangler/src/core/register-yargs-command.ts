@@ -22,6 +22,7 @@ import {
 } from "../metrics/sanitization";
 import { writeOutput } from "../output";
 import { addBreadcrumb } from "../sentry";
+import { resolveProfile, runWithProfile } from "../user/profiles";
 import { dedent } from "../utils/dedent";
 import { isLocal, printResourceLocation } from "../utils/is-local";
 import { printWranglerBanner } from "../wrangler-banner";
@@ -195,119 +196,126 @@ function createHandler(def: InternalCommandDefinition, argv: string[]) {
 						AUTOCREATE_RESOURCES: args.experimentalAutoCreate,
 					};
 
-			await run(experimentalFlags, async () => {
-				const config =
-					(def.behaviour?.provideConfig ?? true)
-						? readConfig(args, {
-								hideWarnings: !(def.behaviour?.printConfigWarnings ?? true),
-								useRedirectIfAvailable:
-									def.behaviour?.useConfigRedirectIfAvailable,
-							})
-						: defaultWranglerConfig;
+			const resolvedProfile = resolveProfile({
+				profile: args.profile,
+				configPath: args.config,
+			});
 
-				const dispatcher = getMetricsDispatcher({
-					sendMetrics: config.send_metrics,
-					hasAssets: !!config.assets?.directory,
-					configPath: config.configPath,
-					argv,
-				});
+			await run(experimentalFlags, () =>
+				runWithProfile(resolvedProfile, async () => {
+					const config =
+						(def.behaviour?.provideConfig ?? true)
+							? readConfig(args, {
+									hideWarnings: !(def.behaviour?.printConfigWarnings ?? true),
+									useRedirectIfAvailable:
+										def.behaviour?.useConfigRedirectIfAvailable,
+								})
+							: defaultWranglerConfig;
 
-				if (def.behaviour?.warnIfMultipleEnvsConfiguredButNoneSpecified) {
-					if (
-						!("env" in args) &&
-						getCloudflareEnv() === undefined &&
-						config.configPath
-					) {
-						const { rawConfig } = experimental_readRawConfig(
-							{
-								config: config.configPath,
-							},
-							{ hideWarnings: true }
-						);
-						const availableEnvs = Object.keys(rawConfig.env ?? {});
-						if (availableEnvs.length > 0) {
-							logger.warn(
-								dedent`
+					const dispatcher = getMetricsDispatcher({
+						sendMetrics: config.send_metrics,
+						hasAssets: !!config.assets?.directory,
+						configPath: config.configPath,
+						argv,
+					});
+
+					if (def.behaviour?.warnIfMultipleEnvsConfiguredButNoneSpecified) {
+						if (
+							!("env" in args) &&
+							getCloudflareEnv() === undefined &&
+							config.configPath
+						) {
+							const { rawConfig } = experimental_readRawConfig(
+								{
+									config: config.configPath,
+								},
+								{ hideWarnings: true }
+							);
+							const availableEnvs = Object.keys(rawConfig.env ?? {});
+							if (availableEnvs.length > 0) {
+								logger.warn(
+									dedent`
 										Multiple environments are defined in the Wrangler configuration file, but no target environment was specified for the ${sanitizedCommand} command.
 										To avoid unintentional changes to the wrong environment, it is recommended to explicitly specify the target environment using the \`-e|--env\` flag or CLOUDFLARE_ENV env variable.
 										If your intention is to use the top-level environment of your configuration simply pass an empty string to the flag to target such environment. For example \`--env=""\`.
 									`
-							);
+								);
+							}
 						}
 					}
-				}
 
-				const allowedArgs = getAllowedArgs(
-					COMMAND_ARG_ALLOW_LIST,
-					sanitizedCommand
-				);
-				const argsWithSanitizedKeys = sanitizeArgKeys(args, argv);
-				const sanitizedArgs = sanitizeArgValues(
-					argsWithSanitizedKeys,
-					allowedArgs
-				);
-				const argsUsed = Object.keys(argsWithSanitizedKeys).sort();
+					const allowedArgs = getAllowedArgs(
+						COMMAND_ARG_ALLOW_LIST,
+						sanitizedCommand
+					);
+					const argsWithSanitizedKeys = sanitizeArgKeys(args, argv);
+					const sanitizedArgs = sanitizeArgValues(
+						argsWithSanitizedKeys,
+						allowedArgs
+					);
+					const argsUsed = Object.keys(argsWithSanitizedKeys).sort();
 
-				dispatcher.sendCommandEvent(
-					"wrangler command started",
-					{
-						sanitizedCommand,
-						sanitizedArgs,
-						argsUsed,
-					},
-					def.behaviour
-				);
-
-				try {
-					const result = await def.handler(args, {
-						sdk: createCloudflareClient(config),
-						config,
-						errors: { UserError, FatalError },
-						logger,
-						fetchResult,
-					});
-
-					const durationMs = Date.now() - startTime;
 					dispatcher.sendCommandEvent(
-						"wrangler command completed",
+						"wrangler command started",
 						{
 							sanitizedCommand,
 							sanitizedArgs,
 							argsUsed,
-							durationMs,
 						},
 						def.behaviour
 					);
 
-					return result;
-				} catch (err) {
-					// If the error is already a CommandHandledError (e.g., from a nested wrangler.parse() call),
-					// don't wrap it again; just rethrow.
-					if (err instanceof CommandHandledError) {
-						throw err;
+					try {
+						const result = await def.handler(args, {
+							sdk: createCloudflareClient(config),
+							config,
+							errors: { UserError, FatalError },
+							logger,
+							fetchResult,
+						});
+
+						const durationMs = Date.now() - startTime;
+						dispatcher.sendCommandEvent(
+							"wrangler command completed",
+							{
+								sanitizedCommand,
+								sanitizedArgs,
+								argsUsed,
+								durationMs,
+							},
+							def.behaviour
+						);
+
+						return result;
+					} catch (err) {
+						// If the error is already a CommandHandledError (e.g., from a nested wrangler.parse() call),
+						// don't wrap it again; just rethrow.
+						if (err instanceof CommandHandledError) {
+							throw err;
+						}
+
+						const durationMs = Date.now() - startTime;
+						dispatcher.sendCommandEvent(
+							"wrangler command errored",
+							{
+								sanitizedCommand,
+								sanitizedArgs,
+								argsUsed,
+								durationMs,
+								errorType: getErrorType(err),
+								errorMessage:
+									err instanceof UserError ? err.telemetryMessage : undefined,
+							},
+							def.behaviour
+						);
+
+						await handleError(err, args, argv);
+
+						// Wrap the error to signal that the telemetry has already been sent and the error reporting handled.
+						throw new CommandHandledError(err);
 					}
-
-					const durationMs = Date.now() - startTime;
-					dispatcher.sendCommandEvent(
-						"wrangler command errored",
-						{
-							sanitizedCommand,
-							sanitizedArgs,
-							argsUsed,
-							durationMs,
-							errorType: getErrorType(err),
-							errorMessage:
-								err instanceof UserError ? err.telemetryMessage : undefined,
-						},
-						def.behaviour
-					);
-
-					await handleError(err, args, argv);
-
-					// Wrap the error to signal that the telemetry has already been sent and the error reporting handled.
-					throw new CommandHandledError(err);
-				}
-			});
+				})
+			);
 		} catch (err) {
 			// Write handler failure to output file if one exists
 			// Unwrap CommandHandledError to get the original error for output

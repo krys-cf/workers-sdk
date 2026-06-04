@@ -250,6 +250,7 @@ import {
 import { fetchAllAccounts } from "./fetch-accounts";
 import { generateAuthUrl, OAUTH_CALLBACK_URL } from "./generate-auth-url";
 import { generateRandomState } from "./generate-random-state";
+import { getResolvedProfile } from "./profiles";
 import type { Account } from "./shared";
 import type {
 	ApiCredentials,
@@ -431,10 +432,13 @@ let hasWarnedAboutDeprecatedV1ApiToken = false;
  * @param config The optional `config` argument lets callers seed the state from an
  * in-memory config (used by the OAuth login flow before it writes to disk).
  */
-function readStoredAuthState(config?: UserAuthConfig): StoredAuthState {
+function readStoredAuthState(
+	config?: UserAuthConfig,
+	profile?: string
+): StoredAuthState {
 	let parsed: UserAuthConfig;
 	try {
-		parsed = config ?? readAuthConfigFile();
+		parsed = config ?? readAuthConfigFile(profile);
 	} catch {
 		return {};
 	}
@@ -470,13 +474,13 @@ function readStoredAuthState(config?: UserAuthConfig): StoredAuthState {
 	return {};
 }
 
-export function getAPIToken(): ApiCredentials | undefined {
+export function getAPIToken(profile?: string): ApiCredentials | undefined {
 	const envAuth = getAuthFromEnv();
 	if (envAuth) {
 		return envAuth;
 	}
 
-	const stored = readStoredAuthState();
+	const stored = readStoredAuthState(undefined, profile);
 	if (stored.deprecatedApiToken) {
 		return { apiToken: stored.deprecatedApiToken };
 	}
@@ -753,10 +757,15 @@ type TokenResponse =
 /**
  * Refresh an access token from the remote service.
  */
-async function exchangeRefreshTokenForAccessToken(): Promise<AccessContext> {
+async function exchangeRefreshTokenForAccessToken(
+	profile?: string
+): Promise<AccessContext> {
 	// Read the refresh token fresh from disk on every call so we always pick up
 	// the latest rotation written by a sibling Wrangler process.
-	const storedRefreshToken = readStoredAuthState().refreshToken;
+	const storedRefreshToken = readStoredAuthState(
+		undefined,
+		profile
+	).refreshToken;
 	if (!storedRefreshToken) {
 		logger.warn("No refresh token is present.");
 	}
@@ -931,11 +940,25 @@ async function generatePKCECodes(): Promise<PKCECodes> {
 	return { codeChallenge, codeVerifier };
 }
 
-export function getAuthConfigFilePath() {
+export function getAuthConfigFilePath(profile?: string) {
+	const resolved = profile ?? getResolvedProfile();
 	const environment = getCloudflareApiEnvironmentFromEnv();
-	const filePath = `${USER_AUTH_CONFIG_PATH}/${environment === "production" ? "default.toml" : `${environment}.toml`}`;
 
-	return path.join(getGlobalWranglerConfigPath(), filePath);
+	let fileName: string;
+	if (resolved === "default") {
+		// Preserve existing behavior: default profile uses environment-suffix for staging
+		fileName =
+			environment === "production" ? "default.toml" : `${environment}.toml`;
+	} else {
+		// Non-default profiles always use <name>.toml regardless of environment
+		fileName = `${resolved}.toml`;
+	}
+
+	return path.join(
+		getGlobalWranglerConfigPath(),
+		USER_AUTH_CONFIG_PATH,
+		fileName
+	);
 }
 
 /**
@@ -944,8 +967,8 @@ export function getAuthConfigFilePath() {
  * No in-memory cache to invalidate — auth state is read on demand by
  * {@link readStoredAuthState} on every call site that needs it.
  */
-export function writeAuthConfigFile(config: UserAuthConfig) {
-	const configPath = getAuthConfigFilePath();
+export function writeAuthConfigFile(config: UserAuthConfig, profile?: string) {
+	const configPath = getAuthConfigFilePath(profile);
 
 	mkdirSync(path.dirname(configPath), {
 		recursive: true,
@@ -955,8 +978,10 @@ export function writeAuthConfigFile(config: UserAuthConfig) {
 	});
 }
 
-export function readAuthConfigFile(): UserAuthConfig {
-	return parseTOML(readFileSync(getAuthConfigFilePath())) as UserAuthConfig;
+export function readAuthConfigFile(profile?: string): UserAuthConfig {
+	return parseTOML(
+		readFileSync(getAuthConfigFilePath(profile))
+	) as UserAuthConfig;
 }
 
 type LoginProps = {
@@ -964,22 +989,24 @@ type LoginProps = {
 	browser: boolean;
 	callbackHost: string;
 	callbackPort: number;
+	profile?: string;
 };
 
 export async function loginOrRefreshIfRequired(
 	complianceConfig: ComplianceConfig,
 	props?: LoginProps
 ): Promise<boolean> {
+	const profile = props?.profile;
 	// TODO: if there already is a token, then try refreshing
 	// TODO: ask permission before opening browser
-	if (!getAPIToken()) {
+	if (!getAPIToken(profile)) {
 		// Not logged in.
 		// If we are not interactive, we cannot ask the user to login
 		return !isNonInteractiveOrCI() && (await login(complianceConfig, props));
-	} else if (isRefreshNeeded()) {
+	} else if (isRefreshNeeded(profile)) {
 		// We're logged in, but the refresh token seems to have expired,
 		// so let's try to refresh it
-		const didRefresh = await refreshToken();
+		const didRefresh = await refreshToken(profile);
 		if (didRefresh) {
 			// The token was refreshed, so we're done here
 			return true;
@@ -999,23 +1026,23 @@ export async function loginOrRefreshIfRequired(
  *
  * Returns the token string if available, or undefined if not logged in.
  */
-export async function getOAuthTokenFromLocalState(): Promise<
-	string | undefined
-> {
+export async function getOAuthTokenFromLocalState(
+	profile?: string
+): Promise<string | undefined> {
 	// Check if we have an OAuth token
-	let stored = readStoredAuthState();
+	let stored = readStoredAuthState(undefined, profile);
 	if (!stored.accessToken) {
 		return undefined;
 	}
 
 	// If the token is expired, try to refresh it
-	if (isRefreshNeeded()) {
-		const didRefresh = await refreshToken();
+	if (isRefreshNeeded(profile)) {
+		const didRefresh = await refreshToken(profile);
 		if (!didRefresh) {
 			return undefined;
 		}
 		// Re-read after the refresh has persisted the new token to disk.
-		stored = readStoredAuthState();
+		stored = readStoredAuthState(undefined, profile);
 	}
 
 	return stored.accessToken?.value;
@@ -1195,12 +1222,15 @@ export async function login(
 		callbackPort: props.callbackPort,
 	});
 
-	writeAuthConfigFile({
-		oauth_token: oauth.token?.value ?? "",
-		expiration_time: oauth.token?.expiry,
-		refresh_token: oauth.refreshToken?.value,
-		scopes: oauth.scopes,
-	});
+	writeAuthConfigFile(
+		{
+			oauth_token: oauth.token?.value ?? "",
+			expiration_time: oauth.token?.expiry,
+			refresh_token: oauth.refreshToken?.value,
+			scopes: oauth.scopes,
+		},
+		props.profile
+	);
 
 	logger.log(`Successfully logged in.`);
 
@@ -1220,15 +1250,15 @@ export async function login(
  * could spuriously trigger an OAuth refresh that fails and aborts the command,
  * even though a perfectly valid env-based credential is in scope.
  */
-function isRefreshNeeded(): boolean {
+function isRefreshNeeded(profile?: string): boolean {
 	if (getAuthFromEnv()) {
 		return false;
 	}
-	const { accessToken } = readStoredAuthState();
+	const { accessToken } = readStoredAuthState(undefined, profile);
 	return Boolean(accessToken && new Date() >= new Date(accessToken.expiry));
 }
 
-async function refreshToken(): Promise<boolean> {
+async function refreshToken(profile?: string): Promise<boolean> {
 	// `exchangeRefreshTokenForAccessToken` reads the refresh token fresh from
 	// disk on every call, so we always pick up the latest rotation written by a
 	// sibling Wrangler process. Refresh tokens are single-use, so a long-lived
@@ -1243,13 +1273,16 @@ async function refreshToken(): Promise<boolean> {
 			},
 			refreshToken: { value: refresh_token } = {},
 			scopes,
-		} = await exchangeRefreshTokenForAccessToken();
-		writeAuthConfigFile({
-			oauth_token,
-			expiration_time,
-			refresh_token,
-			scopes,
-		});
+		} = await exchangeRefreshTokenForAccessToken(profile);
+		writeAuthConfigFile(
+			{
+				oauth_token,
+				expiration_time,
+				refresh_token,
+				scopes,
+			},
+			profile
+		);
 		return true;
 	} catch (e) {
 		logger.debug(
@@ -1259,7 +1292,7 @@ async function refreshToken(): Promise<boolean> {
 	}
 }
 
-export async function logout(): Promise<void> {
+export async function logout(profile?: string): Promise<void> {
 	const authFromEnv = getAuthFromEnv();
 	if (authFromEnv) {
 		// Auth from env overrides any login details, so we cannot log out.
@@ -1270,7 +1303,10 @@ export async function logout(): Promise<void> {
 		return;
 	}
 
-	const storedRefreshToken = readStoredAuthState().refreshToken;
+	const storedRefreshToken = readStoredAuthState(
+		undefined,
+		profile
+	).refreshToken;
 	if (!storedRefreshToken) {
 		logger.log("Not logged in, exiting...");
 		return;
@@ -1289,7 +1325,7 @@ export async function logout(): Promise<void> {
 		},
 	});
 	await response.text(); // blank text? would be nice if it was something meaningful
-	rmSync(getAuthConfigFilePath());
+	rmSync(getAuthConfigFilePath(profile));
 	logger.log(`Successfully logged out.`);
 }
 
@@ -1436,8 +1472,8 @@ export async function requireAuth(
 /**
  * Throw an error if there is no API token available.
  */
-export function requireApiToken(): ApiCredentials {
-	const credentials = getAPIToken();
+export function requireApiToken(profile?: string): ApiCredentials {
+	const credentials = getAPIToken(profile);
 	if (!credentials) {
 		throw new UserError("No API token found.", {
 			telemetryMessage: "user auth missing api token",
@@ -1446,30 +1482,44 @@ export function requireApiToken(): ApiCredentials {
 	return credentials;
 }
 
+function getAccountCacheFileName(): string {
+	const profile = getResolvedProfile();
+	if (profile === "default") {
+		return "wrangler-account.json";
+	}
+	return `wrangler-account-${profile}.json`;
+}
+
 /**
  * Saves the given account details to the filesystem cache.
+ * Cache is scoped to the resolved profile so different profiles
+ * in the same directory don't clobber each other.
  *
  * @param account The account to save
  */
 function saveAccountToCache(account: Account): void {
-	saveToConfigCache<{ account: Account }>("wrangler-account.json", { account });
+	saveToConfigCache<{ account: Account }>(getAccountCacheFileName(), {
+		account,
+	});
 }
 
 /**
  * Retrieves the account details from the filesystem cache.
+ * Cache is scoped to the resolved profile.
  *
  * @returns The cached account if present, `undefined` otherwise
  */
 export function getAccountFromCache(): undefined | Account {
-	return getConfigCache<{ account: Account }>("wrangler-account.json").account;
+	return getConfigCache<{ account: Account }>(getAccountCacheFileName())
+		.account;
 }
 
 /**
  * Get the scopes of the following token, will only return scopes
  * if the token is an OAuth token.
  */
-export function getScopes(): Scope[] | undefined {
-	return readStoredAuthState().scopes;
+export function getScopes(profile?: string): Scope[] | undefined {
+	return readStoredAuthState(undefined, profile).scopes;
 }
 
 export function printScopes(scopes: Scope[]) {

@@ -6,6 +6,7 @@ import supportsColor from "supports-color";
 import { version as wranglerVersion } from "../package.json";
 import { logger } from "./logger";
 import { updateCheck } from "./update-check";
+import { getResolvedProfile } from "./user/profiles";
 import type { NpmVersionCheckResult } from "@cloudflare/workers-utils";
 
 const MIN_NODE_VERSION = "22.0.0";
@@ -60,6 +61,11 @@ export async function printWranglerBanner(performUpdateCheck = true) {
 					)
 				: "─".repeat(text.length))
 	);
+
+	const resolvedProfile = getResolvedProfile();
+	if (resolvedProfile !== "default") {
+		logger.log(`Active profile: ${resolvedProfile}`);
+	}
 
 	if (semiver(process.versions.node, MIN_NODE_VERSION) < 0) {
 		logger.warn(

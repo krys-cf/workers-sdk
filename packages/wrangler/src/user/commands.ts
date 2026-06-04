@@ -3,6 +3,7 @@ import { readConfig } from "../config";
 import { createCommand, createNamespace } from "../core/create-command";
 import { logger } from "../logger";
 import * as metrics from "../metrics";
+import { getResolvedProfile } from "./profiles";
 import {
 	getAuthFromEnv,
 	getOAuthTokenFromLocalState,
@@ -27,6 +28,7 @@ export const loginCommand = createCommand({
 		owner: "Workers: Authoring and Testing",
 		status: "stable",
 		category: "Account",
+		hideGlobalFlags: ["profile"],
 	},
 	behaviour: {
 		printConfigWarnings: false,
@@ -61,6 +63,14 @@ export const loginCommand = createCommand({
 		},
 	},
 	async handler(args, { config }) {
+		const activeProfile = getResolvedProfile();
+		if (activeProfile !== "default") {
+			logger.warn(
+				`This directory has profile "${activeProfile}" active. \`wrangler login\` updates the default profile, not "${activeProfile}".\n` +
+					`To re-authenticate "${activeProfile}", run \`wrangler auth create ${activeProfile}\`.`
+			);
+		}
+
 		if (args.scopesList) {
 			listScopes();
 			return;
@@ -82,6 +92,7 @@ export const loginCommand = createCommand({
 				browser: args.browser,
 				callbackHost: args.callbackHost,
 				callbackPort: args.callbackPort,
+				profile: "default",
 			});
 			return;
 		}
@@ -89,14 +100,11 @@ export const loginCommand = createCommand({
 			browser: args.browser,
 			callbackHost: args.callbackHost,
 			callbackPort: args.callbackPort,
+			profile: "default",
 		});
 		metrics.sendMetricsEvent("login user", {
 			sendMetrics: config.send_metrics,
 		});
-
-		// TODO: would be nice if it optionally saved login
-		// credentials inside node_modules/.cache or something
-		// this way you could have multiple users on a single machine
 	},
 });
 
@@ -106,13 +114,22 @@ export const logoutCommand = createCommand({
 		owner: "Workers: Authoring and Testing",
 		status: "stable",
 		category: "Account",
+		hideGlobalFlags: ["profile"],
 	},
 	behaviour: {
 		printConfigWarnings: false,
 		provideConfig: false,
 	},
 	async handler() {
-		await logout();
+		const activeProfile = getResolvedProfile();
+		if (activeProfile !== "default") {
+			logger.warn(
+				`This directory has profile "${activeProfile}" active. \`wrangler logout\` removes the default profile's token, not "${activeProfile}".\n` +
+					`To delete "${activeProfile}", run \`wrangler auth delete ${activeProfile}\`.`
+			);
+		}
+
+		await logout("default");
 		try {
 			// If the config file is invalid then we default to not sending metrics.
 			// TODO: Clean this up as part of a general config refactor.
@@ -133,6 +150,7 @@ export const whoamiCommand = createCommand({
 		owner: "Workers: Authoring and Testing",
 		status: "stable",
 		category: "Account",
+		hideGlobalFlags: ["profile"],
 	},
 	behaviour: {
 		printBanner: (args) => !args.json,
@@ -152,6 +170,10 @@ export const whoamiCommand = createCommand({
 		},
 	},
 	async handler(args, { config }) {
+		const activeProfile = getResolvedProfile();
+		if (activeProfile !== "default" && !args.json) {
+			logger.log(`Active profile: ${activeProfile}`);
+		}
 		await whoami(config, args.account, undefined, args.json);
 		metrics.sendMetricsEvent("view accounts", {
 			sendMetrics: config.send_metrics,
