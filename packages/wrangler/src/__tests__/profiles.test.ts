@@ -391,4 +391,43 @@ describe("Profiles", () => {
 			});
 		});
 	});
+
+	describe("banner", () => {
+		it("prints active profile in the banner when non-default", async ({
+			expect,
+		}) => {
+			// Create the profile's auth config so it shows up in list
+			const configDir = path.join(
+				getGlobalWranglerConfigPath(),
+				"config"
+			);
+			mkdirSync(configDir, { recursive: true });
+			writeFileSync(path.join(configDir, "my-profile.toml"), "");
+
+			// Bind the profile to the current working directory
+			activateProfileForDirectory("my-profile", process.cwd());
+
+			await runWrangler("auth list");
+
+			expect(normalizeString(std.out)).toContain(
+				"Active profile: my-profile"
+			);
+		});
+
+		it("does not print active profile line when using default", async ({
+			expect,
+		}) => {
+			// Create the default profile
+			const configDir = path.join(
+				getGlobalWranglerConfigPath(),
+				"config"
+			);
+			mkdirSync(configDir, { recursive: true });
+			writeFileSync(path.join(configDir, "default.toml"), "");
+
+			await runWrangler("auth list");
+
+			expect(normalizeString(std.out)).not.toContain("Active profile:");
+		});
+	});
 });
