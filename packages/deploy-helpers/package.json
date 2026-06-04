@@ -33,18 +33,24 @@
 		"type:tests": "tsc -p ./tests/tsconfig.json"
 	},
 	"dependencies": {
-		"@cloudflare/workers-utils": "workspace:*"
+		"@cloudflare/workers-shared": "workspace:*",
+		"@cloudflare/workers-utils": "workspace:*",
+		"chalk": "catalog:default",
+		"command-exists": "catalog:default",
+		"dotenv": "catalog:default",
+		"miniflare": "workspace:*",
+		"undici": "catalog:default"
 	},
 	"devDependencies": {
 		"@cloudflare/containers-shared": "workspace:*",
 		"@cloudflare/workers-tsconfig": "workspace:*",
+		"@cspotcode/source-map-support": "0.8.1",
+		"@types/command-exists": "^1.2.0",
 		"@types/json-diff": "^1.0.3",
 		"@types/node": "catalog:default",
-		"chalk": "^5.2.0",
 		"concurrently": "^8.2.2",
-		"dotenv": "^16.3.1",
+		"devtools-protocol": "^0.0.1182435",
 		"json-diff": "^1.0.6",
-		"miniflare": "workspace:*",
 		"p-queue": "^9.0.0",
 		"tsup": "8.3.0",
 		"typescript": "catalog:default",

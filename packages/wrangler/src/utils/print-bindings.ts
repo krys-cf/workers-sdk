@@ -1,16 +1,16 @@
 import { stripVTControlCharacters } from "node:util";
 import { brandColor, dim, white } from "@cloudflare/cli-shared-helpers/colors";
 import {
+	extractBindingsOfType,
+	isUnsafeBindingType,
+} from "@cloudflare/deploy-helpers";
+import {
 	assertNever,
 	getBindingLocalSupport,
 	getBindingTypeFriendlyName,
 	UserError,
 } from "@cloudflare/workers-utils";
 import chalk from "chalk";
-import {
-	extractBindingsOfType,
-	isUnsafeBindingType,
-} from "../api/startDevWorker/utils";
 import { getFlag } from "../experimental-flags";
 import { logger } from "../logger";
 import type { Binding, StartDevWorkerInput } from "../api/startDevWorker/types";

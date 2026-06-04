@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { generatePreviewAlias } from "@cloudflare/deploy-helpers";
 import {
 	runInTempDir,
 	writeRedirectedWranglerConfig,
@@ -10,8 +11,8 @@ import { http, HttpResponse } from "msw";
  * TODO: remove this `expect` import
  */
 import { assert, beforeEach, describe, expect, it, test, vi } from "vitest";
+import { logger } from "../../logger";
 import { dedent } from "../../utils/dedent";
-import { generatePreviewAlias } from "../../versions/upload";
 import { makeApiRequestAsserter } from "../helpers/assert-request";
 import { captureRequestsFrom } from "../helpers/capture-requests-from";
 import { mockAccountId, mockApiToken } from "../helpers/mock-account-id";
@@ -2030,7 +2031,7 @@ describe("generatePreviewAlias", () => {
 			throw new Error("not a git repo");
 		});
 
-		const result = generatePreviewAlias("worker");
+		const result = generatePreviewAlias("worker", logger);
 		expect(result).toBeUndefined();
 	});
 
@@ -2041,7 +2042,7 @@ describe("generatePreviewAlias", () => {
 				throw new Error("failed to get branch");
 			});
 
-		const result = generatePreviewAlias("worker");
+		const result = generatePreviewAlias("worker", logger);
 		expect(result).toBeUndefined();
 	});
 
@@ -2051,7 +2052,7 @@ describe("generatePreviewAlias", () => {
 			.mockImplementationOnce(() => {}) // is-inside-work-tree
 			.mockImplementationOnce(() => Buffer.from("feat/awesome-feature"));
 
-		const result = generatePreviewAlias(scriptName);
+		const result = generatePreviewAlias(scriptName, logger);
 		expect(result).toBe("feat-awesome-feature");
 		expect(result).not.toBeUndefined();
 		expect((scriptName + "-" + result).length).toBeLessThanOrEqual(63);
@@ -2064,7 +2065,7 @@ describe("generatePreviewAlias", () => {
 			.mockImplementationOnce(() => {}) // is-inside-work-tree
 			.mockImplementationOnce(() => Buffer.from(longBranch));
 
-		const result = generatePreviewAlias(scriptName);
+		const result = generatePreviewAlias(scriptName, logger);
 
 		// Should be truncated to fit: max 63 - 21 - 1 = 41 chars
 		// With 4-char hash + hyphen, we have 41 - 4 - 1 = 36 chars for the prefix
@@ -2080,7 +2081,7 @@ describe("generatePreviewAlias", () => {
 			.mockImplementationOnce(() => {}) // is-inside-work-tree
 			.mockImplementationOnce(() => Buffer.from("--some--branch--name--"));
 
-		const result = generatePreviewAlias(scriptName);
+		const result = generatePreviewAlias(scriptName, logger);
 		expect(result).toBe("some-branch-name");
 		expect(result).not.toBeUndefined();
 		expect((scriptName + "-" + result).length).toBeLessThanOrEqual(63);
@@ -2092,7 +2093,7 @@ describe("generatePreviewAlias", () => {
 			.mockImplementationOnce(() => {}) // is-inside-work-tree
 			.mockImplementationOnce(() => Buffer.from("HEAD/feature/work"));
 
-		const result = generatePreviewAlias(scriptName);
+		const result = generatePreviewAlias(scriptName, logger);
 		expect(result).toBe("head-feature-work");
 		expect(result).not.toBeUndefined();
 		expect((scriptName + "-" + result).length).toBeLessThanOrEqual(63);
@@ -2102,7 +2103,7 @@ describe("generatePreviewAlias", () => {
 		const scriptName = "testscript";
 		vi.stubEnv("WORKERS_CI_BRANCH", "some/debug-branch");
 
-		const result = generatePreviewAlias(scriptName);
+		const result = generatePreviewAlias(scriptName, logger);
 		expect(result).toBe("some-debug-branch");
 		expect(result).not.toBeUndefined();
 		expect((scriptName + "-" + result).length).toBeLessThanOrEqual(63);
@@ -2115,7 +2116,7 @@ describe("generatePreviewAlias", () => {
 			"some/really-really-really-really-really-long-branch-name"
 		);
 
-		const result = generatePreviewAlias(scriptName);
+		const result = generatePreviewAlias(scriptName, logger);
 		assert(result);
 		expect(result).toMatch(
 			/^some-really-really-really-really-really-long-br-[a-f0-9]{4}$/
@@ -2128,7 +2129,7 @@ describe("generatePreviewAlias", () => {
 		const scriptName = "testscript";
 		vi.stubEnv("WORKERS_CI_BRANCH", "-some-branch-name");
 
-		const result = generatePreviewAlias(scriptName);
+		const result = generatePreviewAlias(scriptName, logger);
 		expect(result).toBe("some-branch-name");
 		expect(result).not.toBeUndefined();
 		expect((scriptName + "-" + result).length).toBeLessThanOrEqual(63);
@@ -2138,7 +2139,7 @@ describe("generatePreviewAlias", () => {
 		const scriptName = "testscript";
 		vi.stubEnv("WORKERS_CI_BRANCH", "some----branch-----name");
 
-		const result = generatePreviewAlias(scriptName);
+		const result = generatePreviewAlias(scriptName, logger);
 		expect(result).toBe("some-branch-name");
 		expect(result).not.toBeUndefined();
 		expect((scriptName + "-" + result).length).toBeLessThanOrEqual(63);
@@ -2147,7 +2148,7 @@ describe("generatePreviewAlias", () => {
 	it("Does not produce an alias with leading numbers", () => {
 		vi.stubEnv("WORKERS_CI_BRANCH", "0AF0ED");
 
-		const result = generatePreviewAlias("testscript");
+		const result = generatePreviewAlias("testscript", logger);
 		expect(result).toBeUndefined();
 	});
 
@@ -2157,7 +2158,7 @@ describe("generatePreviewAlias", () => {
 			.mockImplementationOnce(() => {}) // is-inside-work-tree
 			.mockImplementationOnce(() => Buffer.from("short-branch"));
 
-		const result = generatePreviewAlias(scriptName);
+		const result = generatePreviewAlias(scriptName, logger);
 		expect(result).toBeUndefined();
 	});
 
@@ -2168,7 +2169,7 @@ describe("generatePreviewAlias", () => {
 			.mockImplementationOnce(() => {}) // is-inside-work-tree
 			.mockImplementationOnce(() => Buffer.from(longBranch));
 
-		const result = generatePreviewAlias(scriptName);
+		const result = generatePreviewAlias(scriptName, logger);
 
 		expect(result).toBeDefined();
 		expect(result).not.toBeUndefined();

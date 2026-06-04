@@ -4,7 +4,12 @@ import path from "node:path";
 import { URLSearchParams } from "node:url";
 import { cancel } from "@cloudflare/cli-shared-helpers";
 import { verifyDockerInstalled } from "@cloudflare/containers-shared";
-import { triggersDeploy } from "@cloudflare/deploy-helpers";
+import {
+	addWorkersSitesBindings,
+	deployWfpUserWorker,
+	getDeployConfirmFunction,
+	triggersDeploy,
+} from "@cloudflare/deploy-helpers";
 import {
 	APIError,
 	configFileName,
@@ -64,50 +69,17 @@ import { confirmLatestDeploymentOverwrite } from "../versions/deploy";
 import { checkRemoteSecretsOverride } from "./check-remote-secrets-override";
 import { checkWorkflowConflicts } from "./check-workflow-conflicts";
 import { getConfigPatch, getRemoteConfigDiff } from "./config-diffs";
-import type { StartDevWorkerInput } from "../api/startDevWorker/types";
 import type { HandlerContext } from "../core/types";
 import type { RetrieveSourceMapFunction } from "../sourcemap";
 import type { ApiVersion, Percentage, VersionId } from "../versions/types";
 import type { DeployProps, HandleBuild } from "@cloudflare/deploy-helpers";
 import type {
 	CfModule,
-	CfScriptFormat,
 	CfWorkerInit,
 	Config,
 	RawConfig,
 } from "@cloudflare/workers-utils";
 import type { FormData } from "undici";
-
-/**
- * Inject bindings into the Worker to support Workers Sites. These are injected at the last minute so that
- * they don't display in the output of `printBindings()`
- */
-function addWorkersSitesBindings(
-	bindings: NonNullable<StartDevWorkerInput["bindings"]>,
-	namespace: string | undefined,
-	manifest:
-		| {
-				[filePath: string]: string;
-		  }
-		| undefined,
-	format: CfScriptFormat
-) {
-	const withSites = { ...bindings };
-	if (namespace) {
-		withSites["__STATIC_CONTENT"] = {
-			type: "kv_namespace",
-			id: namespace,
-		};
-	}
-
-	if (manifest && format === "service-worker") {
-		withSites["__STATIC_CONTENT_MANIFEST"] = {
-			type: "text_blob",
-			source: { contents: "__STATIC_CONTENT_MANIFEST" },
-		};
-	}
-	return withSites;
-}
 
 export default async function deploy(
 	props: DeployProps,
@@ -144,7 +116,12 @@ export default async function deploy(
 		await verifyWorkerMatchesCITag(config, accountId, name, config.configPath);
 	}
 
-	const deployConfirm = getDeployConfirmFunction(props.strict);
+	const deployConfirm = getDeployConfirmFunction({
+		strictMode: props.strict,
+		isNonInteractiveOrCI,
+		confirm,
+		logger,
+	});
 
 	// TODO: warn if git/hg has uncommitted changes
 	let workerTag: string | null = null;
@@ -878,7 +855,7 @@ See https://developers.cloudflare.com/workers/platform/compatibility-dates for m
 
 	// Early exit for WfP since it doesn't need the below code
 	if (props.dispatchNamespace !== undefined) {
-		deployWfpUserWorker(props.dispatchNamespace, versionId);
+		deployWfpUserWorker(props.dispatchNamespace, versionId, logger);
 		return { versionId, workerTag };
 	}
 	assert(accountId);
@@ -905,33 +882,4 @@ See https://developers.cloudflare.com/workers/platform/compatibility-dates for m
 		workerTag,
 		targets: targets ?? [],
 	};
-}
-
-function deployWfpUserWorker(
-	dispatchNamespace: string,
-	versionId: string | null
-) {
-	// Will go under the "Uploaded" text
-	logger.log("  Dispatch Namespace:", dispatchNamespace);
-	logger.log("Current Version ID:", versionId);
-}
-
-function getDeployConfirmFunction(
-	strictMode = false
-): (text: string) => Promise<boolean> {
-	const nonInteractive = isNonInteractiveOrCI();
-
-	if (nonInteractive && strictMode) {
-		return async () => {
-			logger.error(
-				"Aborting the deployment operation because of conflicts. To override and deploy anyway remove the `--strict` flag"
-			);
-			process.exitCode = 1;
-			return false;
-		};
-	} else if (nonInteractive) {
-		// if its not in strict mode, continue without asking
-		return async () => true;
-	}
-	return confirm;
 }

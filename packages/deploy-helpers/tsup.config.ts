@@ -12,6 +12,13 @@ export default defineConfig(() => [
 		tsconfig: "tsconfig.json",
 		metafile: true,
 		sourcemap: process.env.SOURCEMAPS !== "false",
-		external: [/^@cloudflare\//],
+		external: [
+			/^@cloudflare\//,
+			"miniflare",
+			"undici",
+			"chalk",
+			"dotenv",
+			"command-exists",
+		],
 	},
 ]);

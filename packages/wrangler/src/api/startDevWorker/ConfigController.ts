@@ -1,6 +1,7 @@
 import assert from "node:assert";
 import path from "node:path";
 import { resolveDockerHost } from "@cloudflare/containers-shared";
+import { extractBindingsOfType } from "@cloudflare/deploy-helpers";
 import {
 	configFileName,
 	formatConfigSnippet,
@@ -39,7 +40,7 @@ import { useServiceEnvironments } from "../../utils/useServiceEnvironments";
 import { getZoneIdForPreview } from "../../zones";
 import { Controller } from "./BaseController";
 import { castErrorCause } from "./events";
-import { extractBindingsOfType, unwrapHook } from "./utils";
+import { unwrapHook } from "./utils";
 import type { DevRegistryUpdateEvent } from "./events";
 import type {
 	StartDevWorkerInput,
