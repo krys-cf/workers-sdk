@@ -51,6 +51,11 @@ describe("experimental_getWranglerCommands", () => {
 			    "describe": "Install Cloudflare agents skills, if not already present, without asking the user for confirmation",
 			    "type": "boolean",
 			  },
+			  "profile": {
+			    "describe": "Use a specific auth profile",
+			    "requiresArg": true,
+			    "type": "string",
+			  },
 			  "v": {
 			    "alias": "version",
 			    "describe": "Show version number",

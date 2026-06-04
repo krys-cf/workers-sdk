@@ -88,6 +88,7 @@ describe("pages deploy", () => {
 			      --env-file        Path to an .env file to load - can be specified multiple times - values from earlier files are overridden by values in later files  [array]
 			  -h, --help            Show help  [boolean]
 			      --install-skills  Install Cloudflare agents skills, if not already present, without asking the user for confirmation  [boolean] [default: false]
+			      --profile         Use a specific auth profile  [string]
 			  -v, --version         Show version number  [boolean]
 
 			OPTIONS
@@ -3610,8 +3611,7 @@ and that at least one include rule is provided.
 							Content-Type: text/plain
 
 							<html><body>Hello text modules</body></html>
-							------formdata-undici-0.test--
-							"
+							------formdata-undici-0.test--"
 						`);
 
 						return HttpResponse.json(
@@ -3878,8 +3878,7 @@ and that at least one include rule is provided.
 							};
 							//# sourceMappingURL=bundledWorker-0.test.mjs.map
 
-							------formdata-undici-0.test--
-							"
+							------formdata-undici-0.test--"
 						`);
 
 						expect(JSON.parse(customRoutesJSON)).toMatchObject({
@@ -4325,8 +4324,7 @@ and that at least one include rule is provided.
 							};
 							//# sourceMappingURL=bundledWorker-0.test.mjs.map
 
-							------formdata-undici-0.test--
-							"
+							------formdata-undici-0.test--"
 						`);
 
 						return HttpResponse.json(
